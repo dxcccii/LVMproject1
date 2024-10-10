@@ -16,7 +16,7 @@ def apply_constraints(cells, constraints):
     def place_blocks(start, remaining_constraints):
         # base case: if no more constraints (no more blocks to place), ensure all remaining cells are unfilled
         if not remaining_constraints:
-            return And([Not(cells[i]) for i in range(start, n)])  # Unfilled cells for the rest of the row/column
+            return And([Not(cells[i]) for i in range(start, n)])  # unfilled cells for the rest of the row/column
 
         # get the size of the next block to place
         block_size = remaining_constraints[0]
@@ -34,7 +34,7 @@ def apply_constraints(cells, constraints):
 
             # if there are more blocks after this, we need a gap after this one
             if rest and i + block_size < n:
-                block = And(block, Not(cells[i + block_size]))  # Add a gap after the block
+                block = And(block, Not(cells[i + block_size]))  # add a gap after the block
 
             # recursively places the remaining blocks after this one
             block_formulas.append(And(block, place_blocks(i + block_size + 1, rest)))
