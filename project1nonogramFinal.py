@@ -13,33 +13,43 @@ import time  # Import the time module
 # 'Knowns': if not 'None', then permutations were previously computed and these some cells may already  #
 #  have their value set (either to '1' or '0')
 #########################################################################################################
-def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: list, Knowns: np.array=None):
+def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: list):
+    # Base case #1: index i is the end of the row/column; add the current permutation
+    #  to the list of possibilities and return
     if i == sz:
         Perms.append(currPerm.copy())
         return
-
+    
+    # Base case #2: no blocks left to place; fill the row/column with zeros (blank spaces),
+    #  add the current permutation to the list of possibilities and return
     if len(constraints) == 0:
-        if Knowns is not None and any(Knowns[i:] == 1):
-            return
         currPerm[i:] = [0]*(sz - i)
         Perms.append(currPerm.copy())
         return
-
-    whiteSpaces = sz - i - sum(constraints) - (len(constraints) - 1)
-    if whiteSpaces > 0:
-        if Knowns is None or not Knowns[i] == 1:
-            currPerm[i] = 0
-            computePermsAux(constraints, i+1, sz, currPerm, Perms)
     
+    # There are two possibilities: 
+    #   (i) put a blank space (if possible) at the current index, i; or
+    #   (ii) place the next block starting at index i and, if needed, a blank space after the block. 
+
+    # Possibility (i)
+    # compute the number of blank spaces that can still be placed, given by the number of cells left to fill subtracted by the
+    # sum of block left to place and minimum number of blank spaces that must be placed between them.
+    whiteSpaces = sz - i - sum(constraints) - (len(constraints) - 1)
+    # check if a blank space can be placed; if so, do it and place the remaining blocks starting at index i+1
+    if whiteSpaces > 0:
+        currPerm[i] = 0
+        computePermsAux(constraints, i+1, sz, currPerm, Perms)
+
+    # Possibility (ii)
+    # size of the next block to be placed
     blockSize = constraints[0]
-    if Knowns is not None and any(Knowns[i:i+blockSize] == 0):
-        return
+    # place the block
     currPerm[i:i+blockSize] = [1]*blockSize
+    # if there are still blocks needing placing, add a blank space after the block just placed
     if len(constraints) > 1:
-        if Knowns is not None and Knowns[i+blockSize] == 1:
-            return
         currPerm[i+blockSize] = 0
         blockSize += 1
+    # place the remaining blocks after this one
     computePermsAux(constraints[1:], i+blockSize, sz, currPerm, Perms)
 
 ########################################################################################################
@@ -48,9 +58,9 @@ def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: l
 # 'sz': length of the row/column                                                                       #
 # Returns: list with all permutations                                                                  #
 ########################################################################################################
-def computePerms(constraints: list, sz: int, Knowns : np.array=None) -> list:
+def computePerms(constraints: list, sz: int) -> list:
     Perms = []
-    computePermsAux(constraints, 0, sz, [0]*sz, Perms, Knowns)
+    computePermsAux(constraints, 0, sz, [0]*sz, Perms)
     return Perms
 
 #############################################################################################
@@ -61,24 +71,36 @@ def computePerms(constraints: list, sz: int, Knowns : np.array=None) -> list:
 #  is a string with the solution of the puzzle in a human-readable format                   #
 #############################################################################################
 def nonogram(V: list, H: list) -> (bool, list): 
+    # Number of rows and columns, respectively
     R, C = len(H), len(V)
     s = Solver()
 
     start_time = time.time()  # Start timer
 
+    # Boolean variables: 
+    #  p_i_j is 1 if the cell at row i column j is filled black, and 0 if the cell is blank (0-indexed)
     P = [[Bool(f'p_{i}_{j}') for j in range(C)] for i in range(R)]
 
     # Horizontal Constraints
     for row, rowConstraint in enumerate(H):
+        # Compute all possibilities of fitting the blocks, according to constraint 'rowConstraint', 
+        #  in row 'row'
         perms = computePerms(rowConstraint, C)
+        # For a given permutation, variables p_row_j are And'ed, for 0 <= j < C;
+        #  if entry j of the permutation is '1', the literal is p_row_j, and if '0' the literal is negated (Not(p_row_j))
+        # All permutations for the row are Or'ed together
         s.add(Or( *(And([P[row][j] if p else Not(P[row][j]) for (j, p) in enumerate(pm)]) for pm in perms) ))
 
     # Vertical Constraints
     for col, colConstraint in enumerate(V):
+        # Compute all possibilities of fitting the blocks, according to constraint 'colConstraint', 
+        #  in col 'col'
         perms = computePerms(colConstraint, R)
+        # Cognate to the row constraints
         s.add(Or( *(And([P[i][col] if p else Not(P[i][col]) for (i, p) in enumerate(pm)]) for pm in perms) ))
 
     if s.check() == sat:
+        # If the puzzle is solvable (SAT problem is satisfiable), print the solution in a human-readable format
         m = s.model()
         solvedPuzzle = '\n'.join(['|' + '|'.join(['X' if m[P[i][j]] else ' ' for j in range(C)]) + '|' for i in range(R)])
         end_time = time.time()  # End timer
@@ -88,6 +110,7 @@ def nonogram(V: list, H: list) -> (bool, list):
         return (sat, solvedPuzzle)
 
     else:
+        # Otherwise, return unsat
         end_time = time.time()  # End timer
         elapsed_time = (end_time - start_time) * 1000  # Calculate time in milliseconds
         print('No solution found')
@@ -119,11 +142,15 @@ def well_posed(V: list, H: list) -> (bool):
         perms = computePerms(colConstraint, R)
         s.add(Or( *(And([P[i][col] if p else Not(P[i][col]) for (i, p) in enumerate(pm)]) for pm in perms) ))
 
+    # Solves the SAT problem just as function 'nonogram()'. However, it checks for multiple solutions 
     if s.check() == sat:
         m = s.model()
+        # Negates the current solution by And'ing all positive literals and negating the And (equivalently, 
+        #  Or's the negation of all positive literals in the computed solution)
         s.add(Or( *(Not(P[i][j]) for j in range(C) for i in range(R) if m[P[i][j]]) ))
+        # Saves the first computed solution for printing, if needed
         sol1 = '\n'.join(['|' + '|'.join(['X' if m[P[i][j]] else ' ' for j in range(C)]) + '|' for i in range(R)])
-
+        # Checks for a second solution
         if s.check() == sat:
             m = s.model()
             sol2 = '\n'.join(['|' + '|'.join(['X' if m[P[i][j]] else ' ' for j in range(C)]) + '|' for i in range(R)])
@@ -171,34 +198,37 @@ def checkConstraints(H : list, V : list) -> bool:
     return True
 
 if __name__ == "__main__":
-    ## Well-posed Nonogram (5x5 grid)
-    #V_well = [[1], [1], [1], [1], [1]]
-    #H_well = [[1], [1], [1], [1], [1]]
+    ## Project assignement puzzle, 10x5, well-posed
+    # V = [[2,1],[2,1,3],[7],[1,3],[2,1]]
+    # H = [[2],[2,1],[1,1],[3],[1,1],[1,1],[2],[1,1],[1,2],[2]]
 
-    ## Not well-posed Nonogram (5x5 grid)
-    #V_not_well = [[1], [1], [1], [1], [1]]
-    #H_not_well = [[1], [2], [1], [1], [1]]
+    ## Simple, not well-posed puzzle (5x5)
+    # V = [[1],[1],[1],[1],[1]]
+    # H = [[1],[1],[1],[1],[1]]
 
-    # 25x25 puzzle, not well-posed, NO SOLUTION?
-    #H = [[6, 1], [5, 2], [18], [6, 1], [11], [7, 1], [6], [4, 1], [1, 7], [7, 5], [4, 10], [5, 10], [8, 4, 2], [13], [4, 1], [9, 1, 4], [12, 7], [13], [8], [11, 7], [2, 3, 4], [10], [19], [3, 3], [4, 5]]
-    #V = [[1, 3, 1], [1, 4], [1, 4, 4], [1, 4, 1], [1, 4, 1], [1, 5, 1], [1, 4, 1], [3, 1, 1], [3, 1, 5], [3, 1, 1], [2, 1, 1], [4, 1], [4, 6], [1, 2, 6], [4, 1], [4, 1], [4, 1, 1], [4, 1, 2], [4, 1, 2], [6, 1, 3], [4, 1, 1], [1, 1, 1], [1, 2, 1], [1, 2, 1], [1, 3, 1]]
+    ## 10x10 puzzle, well-posed
+    # V = [[1,2],[1,3],[1,8],[2,7],[6],[4],[4,1,2],[2,3],[1,4],[1,4]]
+    # H = [[4],[2,2],[3,6],[7],[6],[4],[3,1,2],[2,3],[2,4],[2,4]]
 
-    # 25x25 puzzle, well-posed
-    #H = [[6,10,3],[4,6,7],[18],[6,10,3],[11,1,1],[7,8],[6,1,1],[4,8],[1,3,7],[7,5,2,1],[4,10,2],[5,10,2],[8,6,4,2],[13,3],[4,8],[9,2,1,4],[12,7,1],[13,3,2],[8,4],[11,7,1],[2,3,4,3],[10,11],[19],[3,3,9],[4,5,7,1]]
-    #V = [[1,3,1,3,8,1],[1,4,15],[1,4,10,4],[1,4,16],[1,4,1,12],[1,5,1,2,10],[1,4,1,2,5,4],[3,1,1,1,2,5,4],[3,1,5,1,3,1,2,1],[3,1,1,6,2,1,2,1],[2,1,1,4,3,1,1],[4,1,5,3,1],[4,6,1,1],[1,2,6,1,1,1],[4,1,5,1,2,1],[4,1,4,2,1,2,1],[4,1,1,2,1,2,6],[4,1,2,2,2,2,6],[4,1,2,3,2,6],[6,1,3,1,3,2],[4,1,1,1,1,1,1,1,1],[1,1,1,1,1,3,1,1,1],[1,2,1,3,1,2,1],[1,2,1,3,1,2,2,1],[1,3,1,4,7,2]]
+    ## 15x15 puzzle, well-posed
+    # V = [[1,3,1],[6,5],[7,1,1,1],[8,1,1,1],[7,1,1,1],[6,5],[1,3,1,2],[1,2],[1,3,2],[11],[1,7,4],[15],[2,7,4],[2,11],[2,1,3,1]]
+    # H = [[1,4],[3,5],[5,1],[7,3],[5,5],[5,7],[5,5],[7,5],[1,1,5],[7,7],[1,1,2,1,2],[14],[1,1,5],[14],[9]]
 
+    ## 25x25 puzzle, well-posed
+    H = [[6,10,3],[4,6,7],[18],[6,10,3],[11,1,1],[7,8],[6,1,1],[4,8],[1,3,7],[7,5,2,1],[4,10,2],[5,10,2],[8,6,4,2],[13,3],[4,8],[9,2,1,4],[12,7,1],[13,3,2],[8,4],[11,7,1],[2,3,4,3],[10,11],[19],[3,3,9],[4,5,7,1]]
+    V = [[1,3,1,3,8,1],[1,4,15],[1,4,10,4],[1,4,16],[1,4,1,12],[1,5,1,2,10],[1,4,1,2,5,4],[3,1,1,1,2,5,4],[3,1,5,1,3,1,2,1],[3,1,1,6,2,1,2,1],[2,1,1,4,3,1,1],[4,1,5,3,1],[4,6,1,1],[1,2,6,1,1,1],[4,1,5,1,2,1],[4,1,4,2,1,2,1],[4,1,1,2,1,2,6],[4,1,2,2,2,2,6],[4,1,2,3,2,6],[6,1,3,1,3,2],[4,1,1,1,1,1,1,1,1],[1,1,1,1,1,3,1,1,1],[1,2,1,3,1,2,1],[1,2,1,3,1,2,2,1],[1,3,1,4,7,2]]
+    
     # 25x25 puzzle, not well-posed (multiple solutions expected)
-    H = [[5], [5], [5], [5], [5], 
-     [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], 
-     [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 
-     [5], [5], [5], [5], [5], 
-     [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
-
-    V = [[5], [5], [5], [5], [5], 
-     [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], 
-     [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 
-     [5], [5], [5], [5], [5], 
-     [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
+    # H = [[5], [5], [5], [5], [5], 
+    #  [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], 
+    #  [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 
+    #  [5], [5], [5], [5], [5], 
+    #  [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
+    # V = [[5], [5], [5], [5], [5], 
+    #  [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], 
+    #  [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 
+    #  [5], [5], [5], [5], [5], 
+    #  [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
 
     if not checkConstraints(H, V):
         exit(1)
