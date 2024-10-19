@@ -64,6 +64,8 @@ def nonogram(V: list, H: list) -> (bool, list):
     R, C = len(H), len(V)
     s = Solver()
 
+    start_time = time.time()  # Start timer
+
     P = [[Bool(f'p_{i}_{j}') for j in range(C)] for i in range(R)]
 
     # Horizontal Constraints
@@ -75,8 +77,6 @@ def nonogram(V: list, H: list) -> (bool, list):
     for col, colConstraint in enumerate(V):
         perms = computePerms(colConstraint, R)
         s.add(Or( *(And([P[i][col] if p else Not(P[i][col]) for (i, p) in enumerate(pm)]) for pm in perms) ))
-
-    start_time = time.time()  # Start timer
 
     if s.check() == sat:
         m = s.model()
@@ -107,6 +107,8 @@ def well_posed(V: list, H: list) -> (bool):
     s = Solver()
     R, C = len(H), len(V)
 
+    start_time = time.time()  # Start timer
+
     P = [[Bool(f'p_{i}_{j}') for j in range(C)] for i in range(R)]
 
     for row, rowConstraint in enumerate(H):
@@ -116,8 +118,6 @@ def well_posed(V: list, H: list) -> (bool):
     for col, colConstraint in enumerate(V):
         perms = computePerms(colConstraint, R)
         s.add(Or( *(And([P[i][col] if p else Not(P[i][col]) for (i, p) in enumerate(pm)]) for pm in perms) ))
-
-    start_time = time.time()  # Start timer
 
     if s.check() == sat:
         m = s.model()
