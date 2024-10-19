@@ -61,6 +61,9 @@ def well_posed_optimized(V: list, H: list) -> (bool):
     s = Solver()
     R, C = len(H), len(V)
 
+    # Measure the time for resolution
+    start_time = time.time()  # Start timer
+
     P = [[Bool(f'p_{i}_{j}') for j in range(C)] for i in range(R)]
 
     # Precompute known literals from row and column constraints
@@ -98,8 +101,6 @@ def well_posed_optimized(V: list, H: list) -> (bool):
         perms = computePerms(colConstraint, R, Knowns=Paux[:, col])
         s.add(Or( *(And([P[i][col] if p else Not(P[i][col]) for (i, p) in enumerate(pm)]) for pm in perms) ))
 
-    # Measure the time for resolution
-    start_time = time.time()  # Start timer
 
     # First SAT check (to find a solution)
     if s.check() == sat:
