@@ -14,7 +14,7 @@ TotalPerms = 0
 WellPosedTime = 0
 
 def readPuzzle(name: str) -> tuple:
-    with open(f"{name}.txt") as f_in:
+    with open(f"RealPuzzles/{name}.txt") as f_in:
         lines = f_in.read().splitlines()  
         R, C = map(int,lines[0].strip().split())
         H = list( [list(map(int, l.strip().split())) for l in lines[1:R+1]])      
