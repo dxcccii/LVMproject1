@@ -14,13 +14,14 @@ import time  # Import the time module
 #  have their value set (either to '1' or '0')
 #########################################################################################################
 def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: list, Knowns: np.array=None):
-    # Base case #1: index i is the end of the row/column; add the current permutation
+    # Base case #1: index i is the end of the row/column; add the current permutation to the set
     if i == sz:
         Perms.append(currPerm.copy())
         return
 
     # Base case #2: no blocks left to place; fill the row/column with zeros
     if len(constraints) == 0:
+        # If we have know constraints and the current perm is conflicting with them, ignore the permutation
         if Knowns is not None and any(Knowns[i:] == 1):
             return
         currPerm[i:] = [0]*(sz - i)
@@ -32,7 +33,7 @@ def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: l
     if whiteSpaces > 0:
         if Knowns is None or not Knowns[i] == 1:
             currPerm[i] = 0
-            computePermsAux(constraints, i+1, sz, currPerm, Perms)
+            computePermsAux(constraints, i+1, sz, currPerm, Perms, Knowns)
     
     # Possibility (ii): place a block of the required size
     blockSize = constraints[0]
@@ -44,18 +45,98 @@ def computePermsAux(constraints: list, i: int, sz: int, currPerm: list, Perms: l
             return
         currPerm[i+blockSize] = 0
         blockSize += 1
-    computePermsAux(constraints[1:], i+blockSize, sz, currPerm, Perms)
+    computePermsAux(constraints[1:], i+blockSize, sz, currPerm, Perms, Knowns)
 
-#########################################################################################################
+########################################################################################################
 # Driver function to compute all possibilities (permutations) of fitting the blocks in in a row/column #
-#########################################################################################################
+# 'constraints': block to place in the row/column                                                      #
+# 'sz': length of the row/column                                                                       #
+# 'Knowns': if not 'None', then permutations were previously computed and some cells may already       #
+#  have their value set (either to '1' or '0')                                                         #
+# Returns: list with all permutations                                                                  #
+########################################################################################################
 def computePerms(constraints: list, sz: int, Knowns : np.array=None) -> list:
     Perms = []
     computePermsAux(constraints, 0, sz, [0]*sz, Perms, Knowns)
     return Perms
 
+
 #############################################################################################
-# Optimized function that checks if a Nonogram puzzle is well-posed                         #
+# Optimized function that solves a Nonogram puzzle. Computes permutations twice in order to #
+#  reduce the number of constraints of the problem.                                         #
+# 'V': vertical constraints                                                                 #
+# 'H': horizontal constraints                                                               #
+# Returns: (sat, solvedPuzzle), if satisfiable; (unsat, []), otherwise, where solvedPuzzle  #
+#  is a string with the solution of the puzzle in a human-readable format                   #
+#############################################################################################
+def nonogram_optimized(V: list, H: list) -> (bool,list): 
+    # Number of rows and columns, respectively
+    R, C = len(H), len(V)
+    s = Solver()
+    # Measure the time for resolution
+    start_time = time.time()  # Start timer
+
+    P = [[Bool(f'p_{i}_{j}') for j in range(C)] for i in range(R)]
+
+    Paux = np.array([-1] * (R*C)).reshape((R, C))
+    for row, rowConstraint in enumerate(H):
+        perms = np.array(computePerms(rowConstraint, C))
+        permsSum = perms.sum(axis=0)
+        # Set the value of a cell, if it is filled...
+        Paux[row, permsSum == len(perms)] = 1
+        # ... or blank in all permutations
+        Paux[row, permsSum == 0] = 0
+    for col, colConstraint in enumerate(V):
+        perms = np.array(computePerms(colConstraint, R))
+        permsSum = perms.sum(axis=0)
+        Paux[permsSum == len(perms), col] = 1
+        Paux[permsSum == 0, col] = 0
+
+    # Add as constraints the literals corresponding to the cells that are filled or blank
+    for r in range(R):
+        for c in range(C):
+            if Paux[r,c] == 1:
+                s.add(P[r][c])
+            if Paux[r,c] == 0:
+                s.add(Not(P[r][c]))     
+
+    # Horizontal Constraints
+    for row, rowConstraint in enumerate(H):
+        # Ignore permutations that do not comply with the already set literals
+        perms = computePerms(rowConstraint, C, Knowns=Paux[row,])
+        # Remove the set literals from all permutations
+        s.add(Or( *(And( [P[row][j] if p else Not(P[row][j]) for (j,p) in enumerate(pm)]) for pm in perms) ))
+
+    # Vertical Constraints
+    for col, colConstraint in enumerate(V):
+        perms = computePerms(colConstraint, R, Knowns=Paux[:,col])
+        s.add(Or( *(And( [P[i][col] if p else Not(P[i][col]) for (i,p) in enumerate(pm)]) for pm in perms) ))
+
+
+    if s.check() == sat:
+        m = s.model()
+        solvedPuzzle = '\n'.join(['|' + '|'.join(['X' if m[P[i][j]] else ' ' for j in range(C)]) + '|' for i in range(R)])
+        end_time = time.time()  # End timer
+        elapsed_time = (end_time - start_time) * 1000  # Calculate time in milliseconds
+        print(f'Found a solution:\n{solvedPuzzle}')
+        print(f"Resolution time: {elapsed_time:.2f} milliseconds")
+        return (sat, solvedPuzzle)
+
+    else:
+        print('No solution found')
+        return (unsat,[])
+
+
+#############################################################################################
+# Optimized function that checks if a Nonogram puzzle is well-posed, that is, if it has a   #
+#  unique solution. Encodes the puzzle as a SAT problem, as in function 'nonogram()'. If    #
+#  the puzzle is not well-posed because there are multiple solutions, the function prints   #
+#  two solutions. If the puzzle is not well-posed because there is not solution, it states  #
+#  so.                                                                                      #
+# 'V': vertical constraints                                                                 #
+# 'H': horizontal constraints                                                               #
+# Returns: True, if the puzzle is well-posed; and False, otherwise.                         #
+# ()                                                                                        #
 #############################################################################################
 def well_posed_optimized(V: list, H: list) -> (bool):
     s = Solver()
@@ -135,6 +216,10 @@ def well_posed_optimized(V: list, H: list) -> (bool):
 
 #############################################################################################
 # Function that verifies if the constraints are valid: all block sizes are positive and fit #
+#  within the row/colum.                                                                    #
+# 'V': vertical constraints                                                                 #
+# 'H': horizontal constraints                                                               #
+# Returns: True, if the constraints are valid; and False, otherwise.                        #
 #############################################################################################
 def checkConstraints(H : list, V : list) -> bool:
     R, C = len(H), len(V)
