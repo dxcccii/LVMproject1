@@ -194,11 +194,9 @@ def well_posed(V: list, H: list) -> (bool):
 if __name__ == "__main__":
 
     for sz in range(5,31,5):
-        # for H,V in generateNonograms(sz,N=10):
-        for i in range(5,6):
+        # for H,V in generateNonograms(sz,N=5):
+        for i in range(1,6):
             H,V = readPuzzle(f"{sz}_{sz}_{i}")
-            print(H)
-            print(V)
             PermsTime = 0
             SolveTime = 0
             SetupTime = 0
